@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import logging
-from .models import SessionState, RecordingState, SessionStats, generate_sample_id, generate_session_id, format_iso8601
+from models import SessionState, RecordingState, SessionStats, generate_sample_id, generate_session_id, format_iso8601
 
 
 logger = logging.getLogger(__name__)

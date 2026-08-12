@@ -8,7 +8,7 @@ from fastapi import WebSocket
 from typing import List
 import logging
 import asyncio
-from .models import WSMessage
+from models import WSMessage
 
 
 logger = logging.getLogger(__name__)

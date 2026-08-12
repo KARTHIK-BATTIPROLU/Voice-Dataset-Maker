@@ -9,7 +9,7 @@ import csv
 import threading
 from typing import List
 import logging
-from .models import SampleMetadata, ValidationReport
+from models import SampleMetadata, ValidationReport
 import wave
 
 

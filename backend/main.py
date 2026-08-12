@@ -13,14 +13,14 @@ import asyncio
 import yaml
 
 # Import components
-from .audio_recorder import AudioRecorder
-from .transcription_engine import TranscriptionEngine
-from .session_manager import SessionManager
-from .manifest_generator import ManifestGenerator
-from .websocket_manager import WebSocketManager
-from .quality_safeguards import QualitySafeguards
-from .recording_loop import RecordingLoopController
-from .models import RecordingState
+from audio_recorder import AudioRecorder
+from transcription_engine import TranscriptionEngine
+from session_manager import SessionManager
+from manifest_generator import ManifestGenerator
+from websocket_manager import WebSocketManager
+from quality_safeguards import QualitySafeguards
+from recording_loop import RecordingLoopController
+from models import RecordingState
 
 # Configure logging
 logging.basicConfig(

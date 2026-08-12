@@ -8,7 +8,7 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 import logging
 import time
-from .models import TranscriptionResult
+from models import TranscriptionResult
 
 
 logger = logging.getLogger(__name__)
