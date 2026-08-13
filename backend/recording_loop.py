@@ -14,7 +14,7 @@ from session_manager import SessionManager
 from manifest_generator import ManifestGenerator
 from websocket_manager import WebSocketManager
 from quality_safeguards import QualitySafeguards
-from models import SampleMetadata, RecordingState, format_iso8601
+from models import SampleMetadata, RecordingState, format_iso8601, WSMessage
 
 
 logger = logging.getLogger(__name__)
@@ -104,11 +104,10 @@ class RecordingLoopController:
         try:
             # Step 1: Play beep
             logger.info("Playing beep...")
-            await self.websocket_manager.broadcast({
-                "event_type": "BEEP",
-                "payload": {},
-                "timestamp": format_iso8601(datetime.utcnow())
-            })
+            await self.websocket_manager.broadcast(WSMessage(
+                event_type="BEEP",
+                payload={}
+            ))
             
             # Play beep in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -119,11 +118,10 @@ class RecordingLoopController:
             
             # Step 3: Record audio
             logger.info("Recording audio...")
-            await self.websocket_manager.broadcast({
-                "event_type": "RECORDING_START",
-                "payload": {},
-                "timestamp": format_iso8601(datetime.utcnow())
-            })
+            await self.websocket_manager.broadcast(WSMessage(
+                event_type="RECORDING_START",
+                payload={}
+            ))
             
             audio_data = await loop.run_in_executor(None, self.audio_recorder.record_sample)
             
