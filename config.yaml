@@ -24,3 +24,12 @@ quality:
   duplicate_detection_threshold: 5
   enable_quality_warnings: true
   log_low_confidence_samples: true
+
+enrollment:
+  target_samples: 20
+  holdout_samples: 2          # extra clips recorded after the 20, used only for verification
+  single_session_lock: true   # block starting a second session until this one is finalized or reset
+  speaker_id: "ASTA_primary"
+  min_rms_db: -35             # reject near-silent clips before they ever reach Whisper
+  max_clip_peak: 0.98         # reject clipped/distorted clips
+

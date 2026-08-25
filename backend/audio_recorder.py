@@ -43,15 +43,17 @@ class AudioRecorder:
         self.sample_rate = sample_rate
         self.duration = duration
         self.channels = 1  # Mono audio
+        self.has_device = False
         
         # Verify that a microphone is available
         try:
             devices = sd.query_devices()
             input_device = sd.query_devices(kind='input')
+            self.has_device = True
             logger.info(f"Audio recorder initialized with device: {input_device['name']}")
         except Exception as e:
-            logger.error(f"Failed to initialize audio device: {e}")
-            raise AudioRecordingError(f"Microphone not accessible: {e}")
+            logger.warning(f"No physical audio input device available (headless/server mode): {e}")
+            self.has_device = False
     
     def record_sample(self) -> np.ndarray:
         """
@@ -66,6 +68,9 @@ class AudioRecorder:
         Raises:
             AudioRecordingError: If audio capture fails
         """
+        if not self.has_device:
+            logger.warning("record_sample called in headless environment without audio input device. Generating silent sample.")
+            return np.zeros(int(self.sample_rate * self.duration), dtype=np.float32)
         try:
             logger.info(f"Recording {self.duration} seconds of audio at {self.sample_rate}Hz...")
             
@@ -134,6 +139,9 @@ class AudioRecorder:
         Raises:
             AudioRecordingError: If beep playback fails
         """
+        if not self.has_device:
+            logger.debug("play_beep skipped in headless environment")
+            return
         try:
             # Generate beep tone (sine wave)
             t = np.linspace(0, duration, int(self.sample_rate * duration), endpoint=False)

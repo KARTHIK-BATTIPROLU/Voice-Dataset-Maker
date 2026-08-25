@@ -19,6 +19,6 @@ pip install -r ../requirements.txt
 
 REM Start FastAPI server
 echo.
-echo Starting FastAPI server on http://localhost:8000
+echo Starting FastAPI server on http://localhost:9090
 echo.
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 9090

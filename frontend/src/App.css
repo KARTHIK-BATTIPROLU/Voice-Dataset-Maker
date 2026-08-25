@@ -72,6 +72,56 @@ code {
   font-size: 0.9em;
 }
 
+.enrollment-result-card {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 20px 0;
+  color: #e5e7eb;
+}
+
+.enrollment-result-card h3 {
+  color: #34d399;
+  margin-bottom: 12px;
+}
+
+.enrollment-result-card h4 {
+  color: #fbbf24;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.holdout-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.holdout-list li {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.holdout-pass {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.holdout-fail {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.text-warning {
+  color: #fbbf24;
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;

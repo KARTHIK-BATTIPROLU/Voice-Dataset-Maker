@@ -4,9 +4,19 @@ ASTA Voice Dataset Collector - FastAPI Application
 Main entry point for the backend API server.
 """
 
+import os
+import sys
+from pathlib import Path
+
+backend_dir = Path(__file__).parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import logging
 import asyncio
@@ -20,7 +30,7 @@ from manifest_generator import ManifestGenerator
 from websocket_manager import WebSocketManager
 from quality_safeguards import QualitySafeguards
 from recording_loop import RecordingLoopController
-from models import RecordingState
+from models import RecordingState, WSMessage
 
 # Configure logging
 logging.basicConfig(
@@ -42,9 +52,10 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+    allow_origins=allowed_origins if allowed_origins != ["*"] else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,7 +164,8 @@ async def startup_event():
             manifest_generator=manifest_generator,
             websocket_manager=websocket_manager,
             quality_safeguards=quality_safeguards,
-            loop_delay=config['recording']['loop_delay']
+            loop_delay=config['recording']['loop_delay'],
+            enrollment_config=config.get('enrollment', {})
         )
         logger.info("Recording loop controller initialized")
         
@@ -180,19 +192,29 @@ async def shutdown_event():
 
 # REST API Endpoints
 
+class StartSessionRequest(BaseModel if 'BaseModel' in globals() else object):
+    pass
+
 @app.post("/api/session/start")
-async def start_session():
+async def start_session(room_tag: str = "default-room"):
     """Start a new recording session"""
     global recording_task
     
     try:
+        config = load_config()
+        enroll_cfg = config.get('enrollment', {})
+        single_lock = enroll_cfg.get('single_session_lock', True)
+        
         # Check if already recording
         state = session_manager.get_state()
         if state.recording_state == RecordingState.ACTIVE.value:
             raise HTTPException(status_code=400, detail="Session already active")
         
         # Start new session
-        session_id = session_manager.start_session()
+        session_id = session_manager.start_session(
+            room_tag=room_tag,
+            single_session_lock=single_lock
+        )
         
         # Start recording loop
         if recording_task is None or recording_task.done():
@@ -201,15 +223,37 @@ async def start_session():
         # Broadcast state change
         await websocket_manager.send_state_change(RecordingState.ACTIVE.value, session_id)
         
-        logger.info(f"Session started: {session_id}")
+        logger.info(f"Session started: {session_id} (room_tag: {room_tag})")
         
         return JSONResponse({
             "session_id": session_id,
-            "status": "started"
+            "status": "started",
+            "device_name": session_manager.get_state().device_name,
+            "room_tag": room_tag
         })
         
+    except ValueError as ve:
+        logger.warning(f"Session start blocked: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/session/reset")
+async def reset_session():
+    """Reset session state to unlock single-session lock"""
+    global recording_task
+    try:
+        recording_loop.stop_loop()
+        if recording_task and not recording_task.done():
+            recording_task.cancel()
+        session_manager.reset_session()
+        await websocket_manager.send_state_change(RecordingState.IDLE.value, "")
+        logger.info("Session reset via API")
+        return JSONResponse({"status": "reset", "message": "Session reset successfully."})
+    except Exception as e:
+        logger.error(f"Failed to reset session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -264,10 +308,11 @@ async def resume_session():
 
 @app.post("/api/session/stop")
 async def stop_session():
-    """Stop the current recording session"""
+    """Stop the current recording session and run post-session enrollment verification"""
     global recording_task
     
     try:
+        config = load_config()
         stats = session_manager.stop_session()
         recording_loop.stop_loop()
         
@@ -276,16 +321,35 @@ async def stop_session():
         
         await websocket_manager.send_state_change(RecordingState.STOPPED.value, stats.session_id)
         
-        logger.info(f"Session stopped: {stats.session_id}")
+        # Run ECAPA-TDNN speaker enrollment script
+        import enroll
+        loop = asyncio.get_event_loop()
+        enrollment_result = await loop.run_in_executor(
+            None,
+            enroll.run,
+            stats.session_id,
+            config['paths']['manifest_file']
+        )
+
+        session_manager.finalize_session()
+
+        # Surface holdout pass/fail scores through WebSocket immediately
+        await websocket_manager.broadcast(WSMessage(
+            event_type="ENROLLMENT_COMPLETE",
+            payload=enrollment_result
+        ))
+        
+        logger.info(f"Session stopped and enrolled: {stats.session_id}")
         
         return JSONResponse({
             "status": "stopped",
             "total_samples": stats.total_samples,
-            "session_duration": stats.session_duration
+            "session_duration": stats.session_duration,
+            "enrollment_result": enrollment_result
         })
         
     except Exception as e:
-        logger.error(f"Failed to stop session: {e}")
+        logger.error(f"Failed to stop session: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -374,6 +438,29 @@ async def health_check():
     return {"status": "healthy", "service": "ASTA Voice Dataset Collector"}
 
 
+# Static file serving for React frontend (if built in dist/)
+dist_dir = Path(__file__).parent.parent / "frontend" / "dist"
+if not dist_dir.exists():
+    dist_dir = Path("frontend/dist")
+
+if dist_dir.exists():
+    logger.info(f"Serving static frontend assets from {dist_dir}")
+    assets_dir = dist_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        if full_path.startswith("api") or full_path.startswith("ws") or full_path == "health":
+            raise HTTPException(status_code=404, detail="Endpoint not found")
+        target_file = dist_dir / full_path
+        if target_file.exists() and target_file.is_file():
+            return FileResponse(target_file)
+        return FileResponse(dist_dir / "index.html")
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
+

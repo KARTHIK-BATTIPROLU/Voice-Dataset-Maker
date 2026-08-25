@@ -65,3 +65,6 @@ Desktop.ini
 *.pt
 *.pth
 *.onnx
+*.npy
+pretrained_models/
+backend/pretrained_models/

@@ -1,0 +1,64 @@
+.prompt-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 18px 24px;
+  margin: 16px 0;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.prompt-card.idle {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.prompt-card.enrollment {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.prompt-card.holdout {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.prompt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.prompt-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.badge-enrollment {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.badge-holdout {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.prompt-counter {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.prompt-text {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 8px 0 0 0;
+  line-height: 1.4;
+}

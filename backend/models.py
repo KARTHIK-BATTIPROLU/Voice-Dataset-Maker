@@ -39,6 +39,12 @@ class SampleMetadata:
     session_id: str
     timestamp: str  # ISO 8601 format
     whisper_confidence: float
+    speaker_id: str = "ASTA_primary"
+    device_name: str = ""
+    room_tag: str = ""
+    is_holdout: bool = False
+    rms_db: float = 0.0
+    peak_amplitude: float = 0.0
     
     def to_csv_row(self) -> List[str]:
         """Convert to CSV row values"""
@@ -50,7 +56,13 @@ class SampleMetadata:
             str(self.sample_rate),
             self.session_id,
             self.timestamp,
-            str(self.whisper_confidence)
+            str(self.whisper_confidence),
+            self.speaker_id,
+            self.device_name,
+            self.room_tag,
+            str(self.is_holdout),
+            f"{self.rms_db:.2f}",
+            f"{self.peak_amplitude:.4f}"
         ]
 
 
@@ -63,6 +75,11 @@ class SessionState:
     total_samples: int
     session_start_time: str  # ISO 8601
     last_sample_id: str = "0000"
+    device_name: str = ""
+    room_tag: str = ""
+    is_finalized: bool = False
+    valid_sample_count: int = 0
+    current_phrase_index: int = 0
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -72,7 +89,12 @@ class SessionState:
             "recording_state": self.recording_state,
             "total_samples": self.total_samples,
             "session_start_time": self.session_start_time,
-            "last_sample_id": self.last_sample_id
+            "last_sample_id": self.last_sample_id,
+            "device_name": self.device_name,
+            "room_tag": self.room_tag,
+            "is_finalized": self.is_finalized,
+            "valid_sample_count": self.valid_sample_count,
+            "current_phrase_index": self.current_phrase_index
         }
     
     @classmethod

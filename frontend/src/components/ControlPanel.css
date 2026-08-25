@@ -62,12 +62,51 @@
   box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
 }
 
-.stop-btn:not(:disabled) {
-  border-color: #FF4444;
-  color: #FF4444;
+.control-panel-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
 }
 
-.stop-btn:hover:not(:disabled) {
-  background: #FF4444;
-  box-shadow: 0 4px 12px rgba(255, 68, 68, 0.4);
+.room-tag-input-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.room-tag-input-group label {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.room-tag-input {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.room-tag-input:focus {
+  border-color: #4F8EF7;
+}
+
+.reset-btn:not(:disabled) {
+  border-color: #6b7280;
+  color: #9ca3af;
+}
+
+.reset-btn:hover:not(:disabled) {
+  background: #6b7280;
+  color: #ffffff;
 }

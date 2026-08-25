@@ -11,10 +11,19 @@ import VisualOrb from './components/VisualOrb';
 import StatsDisplay from './components/StatsDisplay';
 import TranscriptFeed from './components/TranscriptFeed';
 import Notification from './components/Notification';
+import PromptCard from './components/PromptCard';
 import './App.css';
 
 const API_BASE = '/api';
-const WS_URL = `ws://${window.location.hostname}:8000/ws`;
+const getWsUrl = () => {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.port === '3000'
+    ? `${window.location.hostname}:9090`
+    : window.location.host;
+  return `${protocol}//${host}/ws`;
+};
+const WS_URL = getWsUrl();
 
 function App() {
   const [recordingState, setRecordingState] = useState('idle');
@@ -25,6 +34,14 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [notification, setNotification] = useState(null);
+
+  // Enrollment specific states
+  const [roomTag, setRoomTag] = useState('bedroom-laptop-mic');
+  const [currentPrompt, setCurrentPrompt] = useState('');
+  const [phraseIndex, setPhraseIndex] = useState(1);
+  const [totalPhrases, setTotalPhrases] = useState(22);
+  const [isHoldout, setIsHoldout] = useState(false);
+  const [enrollmentResult, setEnrollmentResult] = useState(null);
 
   const { isConnected, lastMessage } = useWebSocket(WS_URL);
 
@@ -51,6 +68,13 @@ function App() {
     const { event_type, payload } = lastMessage;
 
     switch (event_type) {
+      case 'PROMPT_PHRASE':
+        setCurrentPrompt(payload.phrase);
+        setPhraseIndex(payload.phrase_index);
+        setTotalPhrases(payload.total_phrases);
+        setIsHoldout(payload.is_holdout);
+        break;
+
       case 'BEEP':
         setIsBeeping(true);
         setTimeout(() => setIsBeeping(false), 500);
@@ -59,7 +83,6 @@ function App() {
       case 'RECORDING_START':
         setIsRecording(true);
         setCountdown(5);
-        // Countdown timer
         const interval = setInterval(() => {
           setCountdown((prev) => {
             if (prev <= 1) {
@@ -91,7 +114,12 @@ function App() {
         break;
 
       case 'quality_warning':
-        if (payload.warning_type === 'low_confidence') {
+        if (payload.warning_type === 'rejected_quality') {
+          showNotification(
+            `QUALITY REJECT: Sample #${payload.sample_id} - ${payload.reason}. Re-prompting phrase...`,
+            'error'
+          );
+        } else if (payload.warning_type === 'low_confidence') {
           showNotification(
             `Low confidence sample #${payload.sample_id} (${(payload.confidence * 100).toFixed(0)}%)`,
             'warning'
@@ -102,6 +130,14 @@ function App() {
             'warning'
           );
         }
+        break;
+
+      case 'ENROLLMENT_COMPLETE':
+        setEnrollmentResult(payload);
+        showNotification(
+          `Speaker Enrollment Complete! Voiceprint saved to ${payload.voiceprint_path}`,
+          'info'
+        );
         break;
 
       case 'error':
@@ -122,16 +158,37 @@ function App() {
   };
 
   const handleStart = async () => {
+    setEnrollmentResult(null);
     try {
-      const response = await fetch(`${API_BASE}/session/start`, {
+      const response = await fetch(`${API_BASE}/session/start?room_tag=${encodeURIComponent(roomTag)}`, {
         method: 'POST'
       });
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to start session');
+      }
+
       setRecordingState('active');
       setSessionSamples(0);
-      showNotification(`Recording session started: ${data.session_id}`, 'info');
+      showNotification(`Enrollment session started: ${data.session_id} [Room: ${roomTag}]`, 'info');
     } catch (error) {
-      showNotification(`Failed to start session: ${error.message}`, 'error');
+      showNotification(error.message, 'error');
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/session/reset`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      setRecordingState('idle');
+      setEnrollmentResult(null);
+      setCurrentPrompt('');
+      showNotification(data.message, 'info');
+    } catch (error) {
+      showNotification(`Failed to reset: ${error.message}`, 'error');
     }
   };
 
@@ -161,13 +218,17 @@ function App() {
 
   const handleStop = async () => {
     try {
+      showNotification('Finalizing enrollment and generating ECAPA-TDNN voiceprint...', 'info');
       const response = await fetch(`${API_BASE}/session/stop`, {
         method: 'POST'
       });
       const data = await response.json();
       setRecordingState('stopped');
+      if (data.enrollment_result) {
+        setEnrollmentResult(data.enrollment_result);
+      }
       showNotification(
-        `Session stopped: ${data.total_samples} samples recorded`,
+        `Session finalized! ${data.total_samples} total samples recorded.`,
         'info'
       );
     } catch (error) {
@@ -178,13 +239,20 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>ASTA Voice Dataset Collector</h1>
+        <h1>ASTA Voice Enrollment System</h1>
         <div className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
           {isConnected ? '● Connected' : '○ Disconnected'}
         </div>
       </header>
 
       <main className="app-main">
+        <PromptCard 
+          currentPrompt={currentPrompt}
+          phraseIndex={phraseIndex}
+          totalPhrases={totalPhrases}
+          isHoldout={isHoldout}
+        />
+
         <VisualOrb 
           isBeeping={isBeeping}
           isRecording={isRecording}
@@ -198,11 +266,34 @@ function App() {
 
         <ControlPanel
           recordingState={recordingState}
+          roomTag={roomTag}
+          setRoomTag={setRoomTag}
           onStart={handleStart}
           onPause={handlePause}
           onResume={handleResume}
           onStop={handleStop}
+          onReset={handleReset}
         />
+
+        {enrollmentResult && (
+          <div className="enrollment-result-card">
+            <h3>🎉 Speaker Enrollment Complete</h3>
+            <p><strong>Master Voiceprint:</strong> <code>{enrollmentResult.voiceprint_path}</code></p>
+            <p><strong>Clips Kept:</strong> {enrollmentResult.kept?.length} / {enrollmentResult.total_enrollment_clips}</p>
+            {enrollmentResult.dropped?.length > 0 && (
+              <p className="text-warning"><strong>Dropped Inconsistent Clips:</strong> {enrollmentResult.dropped.join(', ')}</p>
+            )}
+
+            <h4>Holdout Verification Results (Honest Test)</h4>
+            <ul className="holdout-list">
+              {enrollmentResult.holdout_results?.map((res, idx) => (
+                <li key={idx} className={res.passed ? 'holdout-pass' : 'holdout-fail'}>
+                  Sample #{res.sample_id}: Similarity = <strong>{res.similarity}</strong> ({res.passed ? '✅ PASS (>= 0.65)' : '❌ BELOW THRESHOLD (< 0.65)'})
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <TranscriptFeed entries={transcriptEntries} />
       </main>

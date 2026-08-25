@@ -31,7 +31,13 @@ class ManifestGenerator:
         "sample_rate",
         "session_id",
         "timestamp",
-        "whisper_confidence"
+        "whisper_confidence",
+        "speaker_id",
+        "device_name",
+        "room_tag",
+        "is_holdout",
+        "rms_db",
+        "peak_amplitude"
     ]
     
     def __init__(self, manifest_path: Path = Path("manifest.csv"), project_root: Path = Path(".")):
@@ -46,9 +52,11 @@ class ManifestGenerator:
         self.project_root = project_root.resolve()
         self.lock = threading.Lock()
         
-        # Initialize manifest if it doesn't exist
+        # Initialize manifest if it doesn't exist, or migrate header if out of date
         if not self.manifest_path.exists():
             self.initialize_manifest()
+        else:
+            self.migrate_manifest_if_needed()
     
     def initialize_manifest(self) -> None:
         """Create manifest.csv with headers if not exists"""
@@ -60,6 +68,48 @@ class ManifestGenerator:
         except Exception as e:
             logger.error(f"Failed to initialize manifest: {e}")
             raise
+
+    def migrate_manifest_if_needed(self) -> None:
+        """Migrate manifest headers to current schema if missing new columns"""
+        try:
+            with open(self.manifest_path, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+            
+            if not rows:
+                self.initialize_manifest()
+                return
+
+            current_headers = rows[0]
+            if current_headers != self.HEADERS:
+                logger.info(f"Migrating manifest {self.manifest_path} to extended schema...")
+                migrated_rows = [self.HEADERS]
+                dict_reader = csv.DictReader(open(self.manifest_path, 'r', newline='', encoding='utf-8'))
+                for row in dict_reader:
+                    new_row = [
+                        row.get("sample_id", ""),
+                        row.get("file_path", ""),
+                        row.get("transcript", ""),
+                        row.get("duration_sec", "5.0"),
+                        row.get("sample_rate", "16000"),
+                        row.get("session_id", ""),
+                        row.get("timestamp", ""),
+                        row.get("whisper_confidence", "0.0"),
+                        row.get("speaker_id", "ASTA_primary"),
+                        row.get("device_name", ""),
+                        row.get("room_tag", ""),
+                        row.get("is_holdout", "False"),
+                        row.get("rms_db", "0.0"),
+                        row.get("peak_amplitude", "0.0")
+                    ]
+                    migrated_rows.append(new_row)
+                
+                with open(self.manifest_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(migrated_rows)
+                logger.info("Manifest migration successful")
+        except Exception as e:
+            logger.error(f"Failed to migrate manifest: {e}")
     
     def append_sample(self, sample_data: SampleMetadata) -> None:
         """

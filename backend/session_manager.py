@@ -37,15 +37,33 @@ class SessionManager:
         # Load existing state or initialize new
         self.load_state()
     
-    def start_session(self) -> str:
+    def get_input_device_name(self) -> str:
+        """Query system audio input device name"""
+        try:
+            import sounddevice as sd
+            input_device = sd.query_devices(kind='input')
+            return input_device.get('name', 'Default Microphone')
+        except Exception as e:
+            logger.warning(f"Failed to query sounddevice input device: {e}")
+            return "Default Microphone"
+
+    def start_session(self, room_tag: str = "", single_session_lock: bool = True) -> str:
         """
         Create new recording session with timestamp-based ID.
         
+        Args:
+            room_tag: User-entered room/setup description
+            single_session_lock: Block starting second session if unfinalized session exists
+            
         Returns:
             session_id: Format session_YYYYMMDD_HHMMSS
         """
+        if single_session_lock and self.state and self.state.current_session_id and not self.state.is_finalized:
+            raise ValueError(f"Enrollment session '{self.state.current_session_id}' already exists and is locked. Finalize or reset before starting a new session.")
+
         now = datetime.utcnow()
         session_id = generate_session_id(now)
+        device_name = self.get_input_device_name()
         
         # Create session directory
         session_dir = self.data_dir / session_id
@@ -58,13 +76,43 @@ class SessionManager:
             recording_state=RecordingState.ACTIVE.value,
             total_samples=self.state.total_samples if self.state else 0,
             session_start_time=format_iso8601(now),
-            last_sample_id=self.state.last_sample_id if self.state else "0000"
+            last_sample_id=self.state.last_sample_id if self.state else "0000",
+            device_name=device_name,
+            room_tag=room_tag,
+            is_finalized=False,
+            valid_sample_count=0,
+            current_phrase_index=0
         )
         
         self.save_state()
-        logger.info(f"Started session: {session_id}")
+        logger.info(f"Started session: {session_id} [Device: {device_name}, Room: {room_tag}]")
         return session_id
     
+    def reset_session(self) -> None:
+        """Reset the session state so a new session can be started"""
+        self.state = SessionState(
+            current_session_id="",
+            sample_counter=self.state.sample_counter if self.state else 1,
+            recording_state=RecordingState.IDLE.value,
+            total_samples=self.state.total_samples if self.state else 0,
+            session_start_time=format_iso8601(datetime.utcnow()),
+            last_sample_id=self.state.last_sample_id if self.state else "0000",
+            device_name="",
+            room_tag="",
+            is_finalized=False,
+            valid_sample_count=0,
+            current_phrase_index=0
+        )
+        self.save_state()
+        logger.info("Session state reset")
+
+    def finalize_session(self) -> None:
+        """Mark current session as finalized"""
+        if self.state:
+            self.state.is_finalized = True
+            self.save_state()
+            logger.info(f"Session {self.state.current_session_id} marked as finalized")
+
     def pause_session(self) -> None:
         """Pause current session, preserve sample counter"""
         if self.state:
@@ -97,10 +145,7 @@ class SessionManager:
             )
         
         # Calculate session samples
-        session_samples = self.state.total_samples - (
-            self.state.total_samples - 
-            (int(self.state.last_sample_id) if self.state.last_sample_id.isdigit() else 0)
-        )
+        session_samples = self.state.valid_sample_count
         
         # Calculate duration
         start_time = datetime.fromisoformat(self.state.session_start_time.rstrip('Z'))
