@@ -11,3 +11,5 @@ services:
         value: 10000
       - key: ALLOWED_ORIGINS
         value: "*"
+      - key: WHISPER_MODEL_SIZE
+        value: "tiny"

@@ -6,7 +6,7 @@ audio:
   beep_frequency: 800
 
 transcription:
-  model_size: "base"  # Options: tiny, base, small, medium, large
+  model_size: "tiny"  # Options: tiny, base, small, medium, large
   confidence_threshold: 0.4
   device: "cpu"  # Options: cpu, cuda
 

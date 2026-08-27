@@ -74,14 +74,14 @@ recording_task: asyncio.Task = None
 
 
 def load_config():
-    """Load configuration from config.yaml"""
+    """Load configuration from config.yaml with env overrides"""
     config_path = Path("config.yaml")
     if config_path.exists():
         with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+            cfg = yaml.safe_load(f)
     else:
         # Return default configuration
-        return {
+        cfg = {
             'audio': {
                 'sample_rate': 16000,
                 'duration': 5.0,
@@ -89,7 +89,7 @@ def load_config():
                 'beep_frequency': 800
             },
             'transcription': {
-                'model_size': 'base',
+                'model_size': 'tiny',
                 'confidence_threshold': 0.4,
                 'device': 'cpu'
             },
@@ -106,6 +106,14 @@ def load_config():
                 'duplicate_detection_threshold': 5
             }
         }
+
+    # Environment variable override for cloud/low-memory environments
+    if 'WHISPER_MODEL_SIZE' in os.environ:
+        if 'transcription' not in cfg:
+            cfg['transcription'] = {}
+        cfg['transcription']['model_size'] = os.environ['WHISPER_MODEL_SIZE']
+
+    return cfg
 
 
 @app.on_event("startup")

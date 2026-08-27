@@ -21,9 +21,10 @@ class TranscriptionEngine:
     Loads the model once on initialization and reuses it for all transcriptions.
     """
     
-    def __init__(self, model_size: str = "base", confidence_threshold: float = 0.4, device: str = "cpu"):
+    def __init__(self, model_size: str = "tiny", confidence_threshold: float = 0.4, device: str = "cpu"):
         """
-        Load Faster Whisper model for local transcription.
+        Initialize transcription engine with configurable model parameters.
+        Model weights are loaded lazily on first transcription request.
         
         Args:
             model_size: Model size (tiny, base, small, medium, large)
@@ -33,18 +34,25 @@ class TranscriptionEngine:
         self.model_size = model_size
         self.confidence_threshold = confidence_threshold
         self.device = device
-        
-        logger.info(f"Loading Faster Whisper model ({model_size}) on {device}...")
-        try:
-            self.model = WhisperModel(
-                model_size,
-                device=device,
-                compute_type="int8" if device == "cpu" else "float16"
-            )
-            logger.info("Faster Whisper model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load Faster Whisper model: {e}")
-            raise RuntimeError(f"Failed to load transcription model: {e}")
+        self._model = None
+        logger.info(f"TranscriptionEngine initialized with model_size='{model_size}' (lazy load enabled)")
+
+    @property
+    def model(self):
+        """Lazily load and return the WhisperModel instance"""
+        if self._model is None:
+            logger.info(f"Loading Faster Whisper model ({self.model_size}) on {self.device}...")
+            try:
+                self._model = WhisperModel(
+                    self.model_size,
+                    device=self.device,
+                    compute_type="int8" if self.device == "cpu" else "float16"
+                )
+                logger.info("Faster Whisper model loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to load Faster Whisper model: {e}")
+                raise RuntimeError(f"Failed to load transcription model: {e}")
+        return self._model
     
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
         """
