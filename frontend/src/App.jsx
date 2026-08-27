@@ -61,6 +61,50 @@ function App() {
     }
   };
 
+  const recordBrowserAudio = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Browser microphone access not supported');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      const audioChunks = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        try {
+          const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'sample.webm');
+
+          await fetch(`${API_BASE}/sample/upload`, {
+            method: 'POST',
+            body: formData
+          });
+        } catch (err) {
+          console.error('Failed to upload browser recording:', err);
+        } finally {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+      };
+
+      mediaRecorder.start();
+      setTimeout(() => {
+        if (mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+      }, 5000);
+    } catch (err) {
+      console.error('Browser microphone recording error:', err);
+    }
+  }, []);
+
   // Handle WebSocket messages
   useEffect(() => {
     if (!lastMessage) return;
@@ -83,6 +127,7 @@ function App() {
       case 'RECORDING_START':
         setIsRecording(true);
         setCountdown(5);
+        recordBrowserAudio();
         const interval = setInterval(() => {
           setCountdown((prev) => {
             if (prev <= 1) {

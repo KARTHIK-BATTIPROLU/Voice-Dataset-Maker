@@ -22,6 +22,11 @@ import logging
 import asyncio
 import yaml
 
+import io
+import soundfile as sf
+import numpy as np
+from datetime import datetime
+
 # Import components
 from audio_recorder import AudioRecorder
 from transcription_engine import TranscriptionEngine
@@ -30,7 +35,7 @@ from manifest_generator import ManifestGenerator
 from websocket_manager import WebSocketManager
 from quality_safeguards import QualitySafeguards
 from recording_loop import RecordingLoopController
-from models import RecordingState, WSMessage
+from models import RecordingState, WSMessage, SampleMetadata, format_iso8601
 
 # Configure logging
 Path('logs').mkdir(parents=True, exist_ok=True)
@@ -246,6 +251,102 @@ async def start_session(room_tag: str = "default-room"):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Failed to start session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sample/upload")
+async def upload_sample(file: UploadFile = File(...)):
+    """Receive audio file uploaded from client browser microphone"""
+    try:
+        audio_bytes = await file.read()
+        
+        # Read uploaded audio into numpy array
+        try:
+            audio_data, sample_rate = sf.read(io.BytesIO(audio_bytes), dtype='float32')
+            if audio_data.ndim > 1:
+                audio_data = audio_data.mean(axis=1)
+        except Exception:
+            temp_path = Path("temp_upload.webm")
+            with open(temp_path, "wb") as f:
+                f.write(audio_bytes)
+            wav_temp = Path("temp_upload.wav")
+            import subprocess
+            subprocess.run([
+                "ffmpeg", "-y", "-i", str(temp_path),
+                "-ar", "16000", "-ac", "1", str(wav_temp)
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            audio_data, sample_rate = sf.read(wav_temp, dtype='float32')
+            temp_path.unlink(missing_ok=True)
+            wav_temp.unlink(missing_ok=True)
+
+        state = session_manager.get_state()
+        session_dir = session_manager.get_current_session_dir()
+        sample_id = session_manager.get_next_sample_id()
+        filename = f"sample_{sample_id}.wav"
+        file_path = session_dir / filename
+        
+        # Save as 16kHz mono 16-bit PCM WAV
+        audio_recorder.save_wav(audio_data, file_path)
+        rel_path = manifest_generator.to_relative_path(file_path)
+        
+        # Quality check
+        config = load_config()
+        enroll_cfg = config.get('enrollment', {})
+        min_rms = enroll_cfg.get('min_rms_db', -35.0)
+        max_peak = enroll_cfg.get('max_clip_peak', 0.98)
+
+        rms_val = float(np.sqrt(np.mean(audio_data ** 2))) if len(audio_data) > 0 else 0.0
+        rms_db = 20.0 * np.log10(rms_val) if rms_val > 1e-9 else -100.0
+        peak_val = float(np.max(np.abs(audio_data))) if len(audio_data) > 0 else 0.0
+
+        if rms_db < min_rms or peak_val > max_peak:
+            reason = f"RMS too low ({rms_db:.1f} dB < {min_rms} dB)" if rms_db < min_rms else f"Peak amplitude too high ({peak_val:.2f} > {max_peak})"
+            logger.warning(f"Uploaded sample {sample_id} REJECTED_QUALITY: {reason}")
+            await websocket_manager.send_quality_warning(
+                "rejected_quality",
+                sample_id=sample_id,
+                rms_db=round(rms_db, 2),
+                peak_amplitude=round(peak_val, 3),
+                reason=reason
+            )
+            return JSONResponse({"status": "rejected", "reason": reason}, status_code=400)
+
+        # Transcribe using Faster Whisper
+        result = transcription_engine.transcribe(file_path)
+        
+        metadata = SampleMetadata(
+            sample_id=sample_id,
+            file_path=rel_path,
+            transcript=result.text,
+            duration_sec=round(len(audio_data) / 16000.0, 2),
+            sample_rate=16000,
+            session_id=state.current_session_id,
+            timestamp=format_iso8601(datetime.utcnow()),
+            whisper_confidence=round(result.confidence, 4)
+        )
+        manifest_generator.add_sample(metadata)
+        session_manager.state.valid_sample_count += 1
+        session_manager.state.current_phrase_index += 1
+        session_manager.save_state()
+        
+        await websocket_manager.send_transcription_complete(
+            sample_id=sample_id,
+            transcript=result.text,
+            confidence=result.confidence,
+            is_unclear=result.is_unclear
+        )
+        
+        updated_state = session_manager.get_state()
+        await websocket_manager.send_stats_update(updated_state.total_samples, updated_state.valid_sample_count)
+
+        return JSONResponse({
+            "status": "success",
+            "sample_id": sample_id,
+            "transcript": result.text,
+            "confidence": result.confidence
+        })
+    except Exception as e:
+        logger.error(f"Failed to upload sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

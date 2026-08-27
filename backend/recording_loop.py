@@ -170,6 +170,11 @@ class RecordingLoopController:
                 payload={}
             ))
             
+            if not self.audio_recorder.has_device:
+                logger.info("Headless cloud mode: Triggered browser recording via WebSocket. Waiting for client upload...")
+                await asyncio.sleep(self.audio_recorder.duration + 1.0)
+                return
+
             audio_data = await loop.run_in_executor(None, self.audio_recorder.record_sample)
             
             # Step 4: Compute quality metrics
