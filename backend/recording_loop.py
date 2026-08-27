@@ -4,6 +4,7 @@ Recording Loop Controller
 Orchestrates the automated recording cycle with proper error handling.
 """
 
+import os
 import asyncio
 from pathlib import Path
 from datetime import datetime
@@ -170,8 +171,9 @@ class RecordingLoopController:
                 payload={}
             ))
             
-            if not self.audio_recorder.has_device:
-                logger.info("Headless cloud mode: Triggered browser recording via WebSocket. Waiting for client upload...")
+            is_cloud_env = bool(os.getenv("RENDER") or os.getenv("CLOUD_MODE") or not self.audio_recorder.has_device)
+            if is_cloud_env:
+                logger.info("Cloud mode active: Triggered browser client recording via WebSocket. Waiting for upload...")
                 await asyncio.sleep(self.audio_recorder.duration + 1.0)
                 return
 

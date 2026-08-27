@@ -61,13 +61,19 @@ function App() {
     }
   };
 
+  const micStreamRef = useRef(null);
+
   const recordBrowserAudio = useCallback(async () => {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.warn('Browser microphone access not supported');
-        return;
+      let stream = micStreamRef.current;
+      if (!stream || !stream.active) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          console.warn('Browser microphone access not supported');
+          return;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micStreamRef.current = stream;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       const audioChunks = [];
 
@@ -89,8 +95,6 @@ function App() {
           });
         } catch (err) {
           console.error('Failed to upload browser recording:', err);
-        } finally {
-          stream.getTracks().forEach((track) => track.stop());
         }
       };
 
@@ -192,7 +196,7 @@ function App() {
       default:
         break;
     }
-  }, [lastMessage]);
+  }, [lastMessage, recordBrowserAudio]);
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -205,6 +209,13 @@ function App() {
   const handleStart = async () => {
     setEnrollmentResult(null);
     try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (mErr) {
+          console.warn('Microphone permission request error:', mErr);
+        }
+      }
       const response = await fetch(`${API_BASE}/session/start?room_tag=${encodeURIComponent(roomTag)}`, {
         method: 'POST'
       });
