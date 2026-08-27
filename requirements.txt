@@ -7,6 +7,7 @@ soundfile>=0.12.1
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 websockets>=12.0
+python-multipart>=0.0.6
 
 # Transcription (for future tasks)
 faster-whisper>=0.10.0
